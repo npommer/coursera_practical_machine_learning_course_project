@@ -1,0 +1,116 @@
+---
+title: "Coursera_Practical Machine Learning_Course Project"
+author: "Niklas Pommer"
+date: "13 Oktober 2017"
+output: html_document
+---
+
+# Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data processing
+### Load libraries
+For R-package "rattle" RStudio Version >= 3.4 is required.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+library(caret);
+#library(rattle);
+library(rpart); 
+library(rpart.plot);
+library(randomForest); 
+library(repmis);
+```
+
+### Import the data
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+trainurl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- source_data(trainurl, na.strings = c("NA", "#DIV/0!", ""), header = TRUE)
+testing <- source_data(testurl, na.strings = c("NA", "#DIV/0!", ""), header = TRUE)
+```
+
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+dim(training); dim(testing)
+```
+We have 19622 rows and 160 columns in the training data set and 20 rows and 160 columns in the testing data set. We use the testing data set in the end of the whole process.
+For a better understanding of the data we list all available columns.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+names(training)
+```
+We can see here that the first 7 columns are not usable for our prediction. We skip them later.
+
+###  Cleaning the data
+We have to exclude columns with NaNs.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+training <- training[, colSums(is.na(training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
+```
+Did it work? --> Test for NaN
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+training[,!complete.cases(training)]
+```
+Yes :-)
+
+### Splitting the data
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+trainData <- training[, -c(1:7)]
+testData <- testing[, -c(1:7)]
+```
+
+
+One important part of the prediction process is cross-validation. Here we divide the trainings data in a train data set and a validation data set.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+set.seed(4444) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+train <- trainData[inTrain, ]
+valid <- trainData[-inTrain, ]
+```
+
+# Prediction with Decision Trees
+### Decision Trees
+
+We integrate a k-fold cross-validation. "k-fold" means that the training set is split into k smaller sets. The following procedure is followed for each of the k folds:
+1. A model is trained using k-1 of the folds as trainin data
+2. The resulting model is validated on the remaining part of the data
+The performance measure reported by k-fold cross-validation is then the average of the values computed in the loop
+
+(For more information see here: https://medium.com/towards-data-science/train-test-split-and-cross-validation-in-python-80b61beca4b6)
+
+We define 5 folds for the cross-validation process
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+control <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = train, method = "rpart", trControl = control)
+print(fit_rpart, digits = 4)
+```
+
+We now predict the outcome and use the validation data set. Then we print the result and the accuracy.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+predict_rpart <- predict(fit_rpart, valid)
+conf_rpart <- confusionMatrix(valid$classe, predict_rpart)
+conf_rpart
+accuracy_rpart <- conf_rpart$overall[1]
+accuracy_rpart
+```
+The accuracy is 0.4941376. 
+
+### Random Forests
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+fit_rf <- train(classe ~ ., data = train, method = "rf", trControl = control, ntree = 250)
+print(fit_rf, digits = 4)
+```
+
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+predict_rf <- predict(fit_rf, valid)
+# Show prediction result
+conf_rf <- confusionMatrix(valid$classe, predict_rf)
+conf_rf
+
+accuracy_rf <- conf_rf$overall[1]
+accuracy_rf
+```
+The accuracy is 0.9916737 which is better than the score of the decision tree model.The out-of-sample error is 1-0.9916737 = 0.0083263 which is very good.
+
+# Prediction of our test data set
+We now use the random forest model to predict the outcome of our test data set which is also used for quiz 4.
+```{r, echo=TRUE, warning = FALSE, error = FALSE, message = FALSE}
+predict(fit_rf, testData)
+```
